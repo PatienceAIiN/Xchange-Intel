@@ -1,0 +1,43 @@
+# Render blueprint — single Docker web service (API + SPA).
+# Create via "New > Blueprint" pointing at this repo, or a Docker Web Service
+# using the root Dockerfile. Set the env vars below in the Render dashboard.
+services:
+  - type: web
+    name: xchange-intel
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: USE_PAID_SEARCH
+        value: "false"
+      # Secrets — set these in the Render dashboard (do NOT commit real values):
+      - key: GROQ_MODEL
+        value: llama-3.1-8b-instant
+      - key: DATAGOV_API_URL
+        value: https://api.data.gov.in/resource/
+      - key: DATAGOV_MCA_RESOURCE
+        value: 4dbe5667-7b6b-41d7-82af-211562424d9a
+      - key: MATCH_CONFIDENCE_THRESHOLD
+        value: "0.75"
+      - key: RATE_LIMIT_DEFAULT
+        value: "100"
+      - key: RATE_LIMIT_AUTH
+        value: "10"
+      - key: RATE_LIMIT_SCRAPER
+        value: "20"
+      # Secrets — set these in the Render dashboard (do NOT commit real values):
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SOURCE_DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DATAGOV_API_KEY
+        sync: false
