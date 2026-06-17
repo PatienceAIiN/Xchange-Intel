@@ -9,6 +9,7 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 
 import Landing from './pages/Landing';
+import DpdpBanner from './components/DpdpBanner';
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -36,6 +37,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          <DpdpBanner />
         </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>

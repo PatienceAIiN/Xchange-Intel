@@ -130,8 +130,9 @@ export class CompaniesService implements OnModuleInit {
 
       const emails = r.contact_email ? [String(r.contact_email).trim()] : [];
       const phones = r.contact_phone ? [String(r.contact_phone).trim()] : [];
-      // mark enriched if the source already had identity/contact, so we don't re-fetch it
-      const alreadyEnriched = !!(r.cin_real || r.contact_email || r.contact_phone || r.website);
+      // only mark enriched if the source already had the CIN (full identity). Otherwise
+      // leave it for enrichment so we still fetch the MCA CIN / financials.
+      const alreadyEnriched = !!r.cin_real;
 
       toInsert.push({
         name,
@@ -200,25 +201,26 @@ export class CompaniesService implements OnModuleInit {
     const uni = (a?: string[], b?: string[]) =>
       [...new Set([...(a || []), ...(b || [])].filter(Boolean).map((s) => String(s).trim()))];
 
-    c.cin = agg.cin || c.cin;
-    c.llpin = agg.llpin || c.llpin;
-    c.website = agg.website || c.website;
-    c.emails = uni(c.emails, agg.emails);
-    c.phones = uni(c.phones, agg.phones);
-    c.founders = uni(c.founders, agg.founders);
-    c.directors = uni(c.directors, agg.directors);
+    // Overwrite to remove old fabricated AI data with fresh pulled data
+    c.cin = agg.cin;
+    c.llpin = agg.llpin;
+    c.website = agg.website;
+    c.emails = agg.emails;
+    c.phones = agg.phones;
+    c.founders = agg.founders;
+    c.directors = agg.directors;
     c.socialLinks = { ...(c.socialLinks || {}), ...(agg.socialLinks || {}) };
-    c.address = agg.address || c.address;
-    c.industry = agg.industry || c.industry;
-    c.stage = agg.stage || c.stage;
-    c.status = agg.status || c.status;
-    c.city = agg.city || c.city;
-    c.state = agg.state || c.state;
-    c.dpiitNumber = agg.dpiitNumber || c.dpiitNumber;
-    c.authorizedCapital = agg.authorizedCapital || c.authorizedCapital;
-    c.paidUpCapital = agg.paidUpCapital || c.paidUpCapital;
-    c.description = agg.description || c.description;
-    c.aiOverview = agg.aiOverview || c.aiOverview;
+    c.address = agg.address;
+    c.industry = agg.industry;
+    c.stage = agg.stage;
+    c.status = agg.status;
+    c.city = agg.city;
+    c.state = agg.state;
+    c.dpiitNumber = agg.dpiitNumber;
+    c.authorizedCapital = agg.authorizedCapital;
+    c.paidUpCapital = agg.paidUpCapital;
+    c.description = agg.description;
+    c.aiOverview = agg.aiOverview;
     c.startupIndiaRecognised = c.startupIndiaRecognised || agg.startupIndiaRecognised;
     c.sources = uni(c.sources, agg.sources);
     // merge raw so prior source payloads (startupIndia, etc.) are kept alongside new ones
@@ -231,21 +233,33 @@ export class CompaniesService implements OnModuleInit {
     return !c.raw?.enrichedAt;
   }
 
-  /** On-demand full enrichment (MCA + website + contacts + aggregator) for a seeded company. */
+  /** True when key fields are still missing (CIN or any contact). */
+  private incomplete(c: Company): boolean {
+    return !c.cin || !(c.emails?.length || c.phones?.length);
+  }
+
+  /** On-demand enrichment — refreshes when never enriched OR still missing key data,
+   *  so opening a company keeps filling gaps. Preserves existing data (never wipes). */
   async enrich(id: string): Promise<Company> {
     const c = await this.findOne(id);
-    if (!this.needsEnrichment(c)) return c;
     return this.refresh(c);
   }
 
-  /** Companies not yet enriched — used by the background job to pre-fill data. */
+  /** Continuously cycles through companies to re-enrich and correct data in the background. */
   findUnenriched(limit: number): Promise<Company[]> {
     return this.repo
       .createQueryBuilder('c')
-      .where("c.raw->>'enrichedAt' IS NULL")
-      .orderBy('c.createdAt', 'DESC')
+      .orderBy('c.updatedAt', 'ASC')
       .limit(limit)
       .getMany();
+  }
+
+  /** Cheap COUNT of un-enriched companies (no row hydration). */
+  countUnenriched(): Promise<number> {
+    return this.repo
+      .createQueryBuilder('c')
+      .where("c.raw->>'enrichedAt' IS NULL")
+      .getCount();
   }
 
   /** Enrich a batch of un-enriched companies (background pre-fill). Returns count enriched. */
@@ -370,10 +384,18 @@ export class CompaniesService implements OnModuleInit {
   }
 
   async list(q?: string, take = 50) {
+    // exclude the heavy `raw` jsonb — the table & exports don't need it; the modal
+    // fetches full data per company via findOne.
     return this.repo.find({
       where: q ? [{ name: ILike(`%${q}%`) }, { cin: ILike(`%${q}%`) }] : {},
       order: { updatedAt: 'DESC' },
       take,
+      select: [
+        'id', 'name', 'slug', 'cin', 'llpin', 'website', 'emails', 'phones', 'founders',
+        'address', 'socialLinks', 'description', 'sources', 'startupIndiaRecognised',
+        'dpiitNumber', 'industry', 'stage', 'status', 'city', 'state',
+        'authorizedCapital', 'paidUpCapital', 'directors', 'createdAt', 'updatedAt',
+      ],
     });
     }
 

@@ -24,8 +24,12 @@ export class GoogleProvider {
     }
     const sx = await this.searxng(query, rawQuery);
     if (sx && sx.organic.length) return sx;
-    // No working Google source (paid off / instances bot-walled). The Wiki/Wikidata
-    // provider supplies the free, validated grounding layer instead.
+    
+    // Fallback to DuckDuckGo Lite if SearXNG is blocked
+    const ddgRes = await this.ddg(query, rawQuery);
+    if (ddgRes && ddgRes.organic.length) return ddgRes;
+
+    // No working Google source
     return { organic: [], knowledgeGraph: null, rawSnippets: '' };
   }
 
@@ -82,6 +86,46 @@ export class GoogleProvider {
       };
     } catch (e) {
       this.log.warn(`SearXNG failed: ${e}`);
+      return null;
+    }
+  }
+
+  private async ddg(query: string, rawQuery: boolean): Promise<GoogleResult | null> {
+    try {
+      const q = rawQuery ? query : query + ' company India';
+      const url = `https://lite.duckduckgo.com/lite/`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `q=${encodeURIComponent(q)}`,
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) return null;
+      const html = await res.text();
+      
+      const organic: { title: string; link: string; snippet: string }[] = [];
+      const titleMatches = [...html.matchAll(/<a[^>]+class="result-snippet[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/gi)];
+      const snippetMatches = [...html.matchAll(/<td class="result-snippet">([\s\S]*?)<\/td>/gi)];
+      
+      for (let i = 0; i < Math.min(titleMatches.length, 8); i++) {
+        const link = titleMatches[i][1];
+        const title = titleMatches[i][2].replace(/<[^>]+>/g, '').trim();
+        const snippetMatch = snippetMatches[i] ? snippetMatches[i][1].replace(/<[^>]+>/g, '').trim() : '';
+        organic.push({ title, link, snippet: snippetMatch });
+      }
+
+      if (!organic.length) return null;
+
+      return {
+        organic,
+        knowledgeGraph: null,
+        rawSnippets: organic.map(o => `${o.title}: ${o.snippet} (${o.link})`).join('\n'),
+      };
+    } catch (e) {
+      this.log.warn(`DDG failed: ${e}`);
       return null;
     }
   }

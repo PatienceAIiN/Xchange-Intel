@@ -22,14 +22,14 @@ export class WebsiteProvider {
     const words = cleaned.split(' ').filter((w) => w.length > 1);
     if (!words.length) return null;
 
-    // try meaningful domain tokens: first word, first two words, first three words, full compact
+    // try meaningful domain tokens: first two words, first three words, full compact
     const compact = words.join('');
     const tokenSet = [
-      words[0],
+      words.length === 1 ? words[0] : null,
       words.slice(0, 2).join(''),
       words.slice(0, 3).join(''),
       compact,
-    ].filter((t, i, a) => t && t.length >= 3 && t.length <= 30 && a.indexOf(t) === i);
+    ].filter((t, i, a) => t && t.length >= 3 && t.length <= 30 && a.indexOf(t) === i) as string[];
 
     const tlds = ['.com', '.in', '.co.in', '.io', '.net'];
     const matchToken = (words[0].length >= 4 ? words[0] : words.slice(0, 2).join('')).slice(0, 12);

@@ -7,6 +7,7 @@ import { WikiProvider } from './providers/wiki.provider';
 import { WebsiteProvider } from './providers/website.provider';
 import { ContactProvider } from './providers/contact.provider';
 import { AggregatorProvider } from './providers/aggregator.provider';
+import { ZaubaProvider } from './providers/zauba.provider';
 import { TracxnProvider } from './providers/tracxn.provider';
 import { GroqProvider } from './providers/groq.provider';
 
@@ -20,6 +21,7 @@ import { GroqProvider } from './providers/groq.provider';
     WebsiteProvider,
     ContactProvider,
     AggregatorProvider,
+    ZaubaProvider,
     TracxnProvider,
     GroqProvider,
   ],

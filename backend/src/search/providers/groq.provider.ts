@@ -114,10 +114,8 @@ export class GroqProvider {
 
     const sys =
       'You are a precise company-intelligence extractor for Indian companies. ' +
-      'Return STRICT JSON only (no markdown). Base CIN, LLPIN, emails and phones ONLY on the ' +
-      'provided context — never invent identifiers (null if absent). For website, founders, ' +
-      'socialLinks, address, description and aiOverview you may also use well-established public ' +
-      'knowledge about the company, but stay factual and use null/empty when unsure.';
+      'Return STRICT JSON only (no markdown). Base ALL fields including CIN, LLPIN, emails, phones, founders, address, directors ONLY on the ' +
+      'provided context. NEVER invent them or use outside knowledge. If absent in context, return null/empty. You may use public knowledge ONLY for aiOverview and description.';
     const user =
       `Company: "${companyName}"\n\nSearch context:\n${context.slice(0, 6000)}\n\n` +
       `Return JSON with exactly these keys: aiOverview (2-4 sentence neutral summary like an ` +

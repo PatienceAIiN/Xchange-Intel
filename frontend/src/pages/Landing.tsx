@@ -64,9 +64,10 @@ export default function Landing() {
           <Card elevation={0} sx={{ borderRadius: 4, bgcolor: '#ffffff', border: '1px solid #e0e0e0' }}>
             <CardContent sx={{ p: 4 }}>
               <VerifiedUserIcon sx={{ fontSize: 40, color: theme.palette.success.main, mb: 2 }} />
-              <Typography variant="h5" fontWeight={700} gutterBottom>Authoritative Sources</Typography>
+              <Typography variant="h5" fontWeight={700} gutterBottom>Verified &amp; Authentic</Typography>
               <Typography color="text.secondary">
-                Data is verified through authoritative endpoints like the Ministry of Corporate Affairs and Startup India.
+                Every detail is cross-checked against authoritative public registries — identifiers,
+                status and financials you can trust, never fabricated.
               </Typography>
             </CardContent>
           </Card>
@@ -74,9 +75,10 @@ export default function Landing() {
           <Card elevation={0} sx={{ borderRadius: 4, bgcolor: '#ffffff', border: '1px solid #e0e0e0' }}>
             <CardContent sx={{ p: 4 }}>
               <SearchIcon sx={{ fontSize: 40, color: theme.palette.secondary.main, mb: 2 }} />
-              <Typography variant="h5" fontWeight={700} gutterBottom>Deep Scraping</Typography>
+              <Typography variant="h5" fontWeight={700} gutterBottom>Complete Contact Intelligence</Typography>
               <Typography color="text.secondary">
-                Missing details? Our deep scraping technology acts as an autonomous agent to find hidden emails and contact numbers from company sites.
+                Missing details? Our AI automatically discovers verified emails and contact numbers
+                for a company and fills them into the profile — instantly.
               </Typography>
             </CardContent>
           </Card>

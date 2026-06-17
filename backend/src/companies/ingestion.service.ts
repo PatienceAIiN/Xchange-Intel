@@ -94,7 +94,7 @@ export class IngestionService implements OnModuleInit {
   async getStats() {
     const [totalCompanies, pending] = await Promise.all([
       this.companies.countCompanies(),
-      this.companies.findUnenriched(10000).then((r) => r.length).catch(() => 0),
+      this.companies.countUnenriched().catch(() => 0),
     ]);
     return { ...this.stats, totalCompanies, pendingEnrichment: pending };
   }

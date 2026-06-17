@@ -126,21 +126,20 @@ export default function CompanyModal({
   const [asking, setAsking] = useState(false);
   const [enriching, setEnriching] = useState(false);
 
-  // reset chat per company; auto-enrich seeded (Startup-India-only) companies on open:
-  // show their SI cards instantly, then fetch MCA financials + contacts in the background.
+  // always start fetching on open to overwrite old AI data with fresh pulled data
   useEffect(() => {
     setChat([]);
     setQuestion('');
     if (!company) return;
-    // only fetch if this company has never been enriched (background job marks raw.enrichedAt)
-    const seeded = !company.raw?.enrichedAt;
-    if (seeded) {
-      setEnriching(true);
-      api.post(`/companies/${company.id}/enrich`)
-        .then((r) => { if (r.data && onUpdate) onUpdate(r.data); })
-        .catch(() => {})
-        .finally(() => setEnriching(false));
-    }
+
+    let active = true;
+    setEnriching(true);
+    api.post(`/companies/${company.id}/enrich`)
+      .then((r) => { if (active && r.data && onUpdate) onUpdate(r.data); })
+      .catch(() => {})
+      .finally(() => { if (active) setEnriching(false); });
+      
+    return () => { active = false; };
   }, [company?.id]);
 
   if (!company) return null;
@@ -212,15 +211,18 @@ export default function CompanyModal({
         </IconButton>
       </DialogTitle>
 
-      <DialogContent dividers>
+      <DialogContent dividers sx={{ position: 'relative' }}>
         {enriching && (
-          <Box sx={{ bgcolor: '#f1f6ff', border: '1px solid #d2e3fc', borderRadius: 2, p: 1.5, mb: 2 }}>
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <CircularProgress size={16} />
-              <Typography variant="body2" color="text.secondary">
-                Fetching fresh MCA financials &amp; contact details from public sources…
-              </Typography>
-            </Stack>
+          <Box sx={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
+            bgcolor: 'rgba(255,255,255,0.85)', zIndex: 10,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <CircularProgress size={40} sx={{ mb: 2 }} />
+            <Typography variant="h6" fontWeight={700}>Fetching fresh data...</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Updating to new fresh pulled data
+            </Typography>
           </Box>
         )}
         {googleAiOverview && (

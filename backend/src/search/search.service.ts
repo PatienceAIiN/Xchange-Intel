@@ -6,6 +6,7 @@ import { WikiProvider } from './providers/wiki.provider';
 import { WebsiteProvider } from './providers/website.provider';
 import { ContactProvider } from './providers/contact.provider';
 import { AggregatorProvider } from './providers/aggregator.provider';
+import { ZaubaProvider } from './providers/zauba.provider';
 import { TracxnProvider } from './providers/tracxn.provider';
 import { GroqProvider } from './providers/groq.provider';
 
@@ -53,6 +54,7 @@ export class SearchService {
     private websiteResolver: WebsiteProvider,
     private contact: ContactProvider,
     private aggregator: AggregatorProvider,
+    private zauba: ZaubaProvider,
     private tracxn: TracxnProvider,
     private groq: GroqProvider,
   ) {}
@@ -98,13 +100,19 @@ export class SearchService {
 
     // ---- Phase B: authoritative MCA record (by name hit, else by discovered CIN) ----
     let mca = mcaByName;
-    if (!mca && cinMatch) mca = await this.mca.byCin(cinMatch).catch(() => null);
+    if (!mca && cinMatch) {
+      mca = await this.mca.byCin(cinMatch).catch(() => null);
+      if (!mca) cinMatch = null; // discard unverified CIN so fallbacks can run
+    }
     // AI-assisted resolution: when no direct MCA hit, let the AI suggest the legal name/CIN,
     // then CONFIRM it against MCA (authoritative). Only MCA-verified results are accepted.
     if (!mca) {
       const idr = await this.groq.resolveIdentity(name).catch(() => null);
       if (idr) {
-        if (idr.cin) mca = await this.mca.byCin(idr.cin).catch(() => null);
+        if (idr.cin) {
+          mca = await this.mca.byCin(idr.cin).catch(() => null);
+          if (mca) cinMatch = idr.cin;
+        }
         if (!mca) {
           for (const ln of idr.legalNames) {
             mca = await this.mca.byName(ln).catch(() => null);
@@ -114,7 +122,21 @@ export class SearchService {
         if (mca) raw.identityResolver = idr;
       }
     }
+    // ZaubaCorp CIN-by-name fallback — finds CINs for companies NOT in the data.gov
+    // snapshot. The discovered CIN is verified against MCA when possible.
+    if (!mca && !cinMatch) {
+      const zaubaCin = await this.zauba.resolveCin(name).catch(() => null);
+      if (zaubaCin) {
+        const verified = await this.mca.byCin(zaubaCin).catch(() => null);
+        if (verified) {
+          mca = verified;
+          cinMatch = zaubaCin;
+        }
+        raw.zaubaCin = zaubaCin;
+      }
+    }
     if (mca) { sources.push('mca'); raw.mca = mca.raw; }
+    else if (cinMatch) { cinMatch = null; } // ALWAYS CLEAR if no MCA verification
 
     // resolve the official website now so contacts can be scraped from the real site;
     // if no source provided one, verify a name-derived domain (never fabricated).
@@ -130,7 +152,7 @@ export class SearchService {
       w?.snippets || '',
       tx ? `Tracxn: ${JSON.stringify(tx)}` : '',
     ].filter(Boolean).join('\n');
-    const ai = await this.groq.extract(name, context).catch(() => null);
+    let ai = await this.groq.extract(name, context).catch(() => null);
     if (ai) { sources.push('ai'); raw.ai = ai; }
     // AI-mentioned contacts (from structured fields + the overview text) become
     // candidates that the scraper VERIFIES against the real website before use.
@@ -215,7 +237,10 @@ export class SearchService {
         const aiFollowup = await this.groq.extract(name, enrichedContext).catch(() => null);
         if (aiFollowup) {
           raw.aiFollowup = aiFollowup;
-          if (ai) {
+          if (!ai) {
+            ai = aiFollowup;
+            raw.ai = ai;
+          } else {
             if (!ai.directors?.length && aiFollowup.directors?.length) ai.directors = aiFollowup.directors;
             if (!ai.cin && aiFollowup.cin) ai.cin = aiFollowup.cin;
             if (!ai.website && aiFollowup.website) ai.website = aiFollowup.website;
@@ -225,6 +250,7 @@ export class SearchService {
             if (!ai.authorizedCapital && aiFollowup.authorizedCapital) ai.authorizedCapital = aiFollowup.authorizedCapital;
             if (!ai.paidUpCapital && aiFollowup.paidUpCapital) ai.paidUpCapital = aiFollowup.paidUpCapital;
             if (!ai.founders?.length && aiFollowup.founders?.length) ai.founders = aiFollowup.founders;
+            if (!ai.aiOverview && aiFollowup.aiOverview) ai.aiOverview = aiFollowup.aiOverview;
             if (aiFollowup.socialLinks) ai.socialLinks = { ...(aiFollowup.socialLinks || {}), ...(ai.socialLinks || {}) };
             raw.ai = ai;
           }
@@ -259,9 +285,11 @@ export class SearchService {
           const verified = await this.mca.byCin(candidate).catch(() => null);
           if (verified) {
             const verifiedName = (verified.companyName || '').toLowerCase();
-            const queryName = name.toLowerCase().replace(/private|limited|pvt|ltd|llp|technologies|technology|solutions|services|india|inc|corp/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+            const vWords = verifiedName.replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length > 2);
+            const queryName = name.toLowerCase().replace(/private|limited|pvt|ltd|llp|technologies|technology|solutions|solution|services|india|inc|corp/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
             const matchWords = queryName.split(' ').filter(w => w.length > 2);
-            const nameMatches = matchWords.some(w => verifiedName.includes(w));
+            const nameMatches = matchWords.length > 0 && vWords.length > 0 && 
+              (vWords[0].includes(matchWords[0]) || matchWords[0].includes(vWords[0]));
             if (nameMatches) {
               mca = verified;
               cinMatch = candidate;
@@ -352,8 +380,8 @@ export class SearchService {
       emails: this.uniq([...(contacts?.emails || []), ...aggEmails, ...txEmails]),
       phones: this.uniq([...(contacts?.phones || []), ...aggPhones, ...txPhones]),
       founders: this.uniq([...(w?.founders || []), ...this.kgFounders(kg), ...(tx?.founders || [])]).filter((n) => this.isPersonName(n)),
-      directors: this.uniq([...mcaDirectors, ...aggDirectors, ...(ai?.directors || [])]).filter((n) => this.isPersonName(n)),
-      address: mca?.address || w?.headquarters || siAddress || kg.address || ai?.address || '',
+      directors: this.uniq([...mcaDirectors, ...aggDirectors]).filter((n) => this.isPersonName(n)),
+      address: mca?.address || w?.headquarters || siAddress || kg.address || '',
       socialLinks: { ...this.kgSocial(kg), ...(w?.socialLinks || {}), ...(contacts?.socials || {}), ...(ai?.socialLinks || {}) },
       description: w?.description || kg.description || ai?.description || '',
       aiOverview: ai?.aiOverview || w?.description || kg.description || '',
@@ -365,8 +393,8 @@ export class SearchService {
       status: mca?.status || '',
       city,
       state,
-      authorizedCapital: mca?.raw?.AuthorizedCapital || ai?.authorizedCapital || '',
-      paidUpCapital: mca?.raw?.PaidupCapital || ai?.paidUpCapital || '',
+      authorizedCapital: mca?.raw?.AuthorizedCapital || '',
+      paidUpCapital: mca?.raw?.PaidupCapital || '',
       raw,
     };
     this.log.log(`Aggregated "${name}" from [${merged.sources.join(', ') || 'none'}]`);
