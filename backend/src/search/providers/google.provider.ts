@@ -65,29 +65,46 @@ export class GoogleProvider {
   }
 
   private async searxng(query: string, rawQuery: boolean): Promise<GoogleResult | null> {
-    try {
-      const base = process.env.SEARXNG_URL;
-      if (!base) return null;
-      const q = rawQuery ? query : query + ' company India';
-      const url = `${base}/search?q=${encodeURIComponent(q)}&format=json`;
-      const res = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!res.ok) return null;
-      const data: any = await res.json();
-      const organic = (data.results || [])
-        .slice(0, 8)
-        .map((o: any) => ({ title: o.title, link: o.url, snippet: o.content || '' }));
-      return {
-        organic,
-        knowledgeGraph: null,
-        rawSnippets: organic.map((o: any) => `${o.title}: ${o.snippet} (${o.link})`).join('\n'),
-      };
-    } catch (e) {
-      this.log.warn(`SearXNG failed: ${e}`);
-      return null;
+    const bases = process.env.SEARXNG_URL
+      ? process.env.SEARXNG_URL.split(',').map(s => s.trim())
+      : ['https://searx.be', 'https://search.ononoki.org', 'https://searx.work', 'https://paulgo.io', 'https://searx.tiekoetter.com'];
+      
+    // Randomize order to spread the load and reduce blocking
+    bases.sort(() => Math.random() - 0.5);
+
+    const q = rawQuery ? query : query + ' company India';
+
+    for (const base of bases) {
+      if (!base) continue;
+      try {
+        const url = `${base}/search?q=${encodeURIComponent(q)}&format=json`;
+        const res = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' },
+          signal: AbortSignal.timeout(8000),
+        });
+        
+        if (!res.ok) continue; // If 403 or blocked, try the next one
+        
+        const data: any = await res.json();
+        const organic = (data.results || [])
+          .slice(0, 8)
+          .map((o: any) => ({ title: o.title, link: o.url, snippet: o.content || '' }));
+          
+        if (organic.length === 0) continue; // If empty results (often a silent block), try next
+        
+        return {
+          organic,
+          knowledgeGraph: null,
+          rawSnippets: organic.map((o: any) => `${o.title}: ${o.snippet} (${o.link})`).join('\n'),
+        };
+      } catch (e) {
+        // Timeout or network error, silently continue to the next instance
+        continue;
+      }
     }
+    
+    this.log.warn(`All SearXNG proxies failed or blocked.`);
+    return null;
   }
 
   private async ddg(query: string, rawQuery: boolean): Promise<GoogleResult | null> {
