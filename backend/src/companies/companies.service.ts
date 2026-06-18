@@ -169,6 +169,46 @@ export class CompaniesService implements OnModuleInit {
     return { added, skipped };
   }
 
+  /**
+   * Bulk-import raw MCA Company Master Data rows into our schema (deduped by slug).
+   * Maps ONLY genuine MCA fields — CIN, status, address, capital, class, ROC. Contacts
+   * are left empty (extracted later by the background job from real sources). No fabrication.
+   */
+  async seedFromMca(rows: any[]): Promise<{ added: number; skipped: number }> {
+    if (!rows?.length) return { added: 0, skipped: 0 };
+    const existing = new Set((await this.repo.find({ select: ['slug'] })).map((c) => c.slug));
+    const toInsert: Partial<Company>[] = [];
+    let skipped = 0;
+    for (const r of rows) {
+      const name = (r.CompanyName || '').trim();
+      const cin = (r.CIN || '').trim();
+      if (!name || !cin) { skipped++; continue; }
+      const slug = this.slugify(name);
+      if (!slug || existing.has(slug)) { skipped++; continue; }
+      existing.add(slug);
+      toInsert.push({
+        name,
+        slug,
+        cin,
+        address: r.Registered_Office_Address || '',
+        state: r.CompanyStateCode || '',
+        status: r.CompanyStatus || '',
+        industry: r.CompanyIndustrialClassification || '',
+        authorizedCapital: r.AuthorizedCapital || '',
+        paidUpCapital: r.PaidupCapital || '',
+        startupIndiaRecognised: false,
+        sources: ['mca', 'imported'],
+        raw: { mca: r }, // genuine MCA record; NO enrichedAt → contacts extracted later
+      });
+    }
+    let added = 0;
+    for (let i = 0; i < toInsert.length; i += 200) {
+      await this.repo.save(toInsert.slice(i, i + 200).map((p) => this.repo.create(p)));
+      added += Math.min(200, toInsert.length - i);
+    }
+    return { added, skipped };
+  }
+
   private toPayload(agg: any, slug: string): Partial<Company> {
     return {
       name: agg.name, slug, cin: agg.cin, llpin: agg.llpin, website: agg.website,
@@ -191,6 +231,38 @@ export class CompaniesService implements OnModuleInit {
   findByIds(ids: string[]) {
     if (!ids?.length) return [];
     return this.repo.find({ where: { id: In(ids) } });
+  }
+
+  /** Write ALL companies to a CSV at `path` in the EXACT template format
+   *  (Name,CIN,LLPIN,Website,Emails,Phones,Founders,Address,Social,StartupIndia,DPIIT,
+   *   Industry,Stage,MCAStatus,Sources,Description). Genuine data only. */
+  async writeCsvExport(path: string): Promise<number> {
+    const fs = await import('fs');
+    const H = ['Name','CIN','LLPIN','Website','Emails','Phones','Founders','Address','Social',
+      'StartupIndia','DPIIT','Industry','Stage','MCAStatus','Sources','Description'];
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const arr = (a: any) => (Array.isArray(a) ? a.join('; ') : '');
+    const soc = (o: any) => (o && typeof o === 'object'
+      ? Object.entries(o).map(([k, v]) => `${k}:${v}`).join('; ') : '');
+    const tmp = `${path}.tmp`;
+    fs.writeFileSync(tmp, H.join(',') + '\n');
+    const PAGE = 2000;
+    let off = 0, total = 0;
+    for (;;) {
+      const rows = await this.repo.find({ order: { updatedAt: 'DESC' }, take: PAGE, skip: off });
+      if (!rows.length) break;
+      const lines = rows.map((c) => [
+        c.name, c.cin || '', c.llpin || '', c.website || '', arr(c.emails), arr(c.phones),
+        arr(c.founders), c.address || '', soc(c.socialLinks),
+        c.startupIndiaRecognised ? 'Yes' : 'No', c.dpiitNumber || '', c.industry || '',
+        c.stage || '', c.status || '', arr(c.sources), c.description || '',
+      ].map(esc).join(','));
+      fs.appendFileSync(tmp, lines.join('\n') + '\n');
+      total += rows.length;
+      off += PAGE;
+    }
+    fs.renameSync(tmp, path); // atomic swap so readers never see a partial file
+    return total;
   }
 
   /** Re-run live aggregation for a stored company and persist any newly found data.
@@ -243,6 +315,38 @@ export class CompaniesService implements OnModuleInit {
   async enrich(id: string): Promise<Company> {
     const c = await this.findOne(id);
     return this.refresh(c);
+  }
+
+  /** Contacts-only enrichment (website + aggregator) for an identified company.
+   *  Authentic, preserves existing data, stamps raw.enrichedAt. Fast (no MCA/LLM). */
+  async enrichContactsOnly(c: Company, bulk = false): Promise<Company> {
+    const r = await this.search.extractContacts(c.name, c.cin, c.website, !bulk);
+    const uni = (a?: string[], b?: string[]) =>
+      [...new Set([...(a || []), ...(b || [])].filter(Boolean).map((s) => String(s).trim()))];
+    c.website = c.website || r.website;
+    c.emails = uni(c.emails, r.emails);
+    c.phones = uni(c.phones, r.phones);
+    c.socialLinks = { ...(c.socialLinks || {}), ...r.socials };
+    c.directors = uni(c.directors, r.directors);
+    if (r.contactsRaw && !c.sources.includes('website')) c.sources = [...c.sources, 'website'];
+    if (r.aggRaw && !c.sources.includes('aggregator')) c.sources = [...c.sources, 'aggregator'];
+    // Startup India DPIIT recognition (genuine) — fills StartupIndia/DPIIT/stage; preserves existing
+    const si: any = r.startupIndia;
+    if (si) {
+      c.startupIndiaRecognised = true;
+      c.dpiitNumber = c.dpiitNumber || si.dpiitNumber || null;
+      c.stage = c.stage || si.stage || '';
+      c.industry = c.industry || si.industry || '';
+      if (!c.sources.includes('startup_india')) c.sources = [...c.sources, 'startup_india'];
+    }
+    c.raw = {
+      ...(c.raw || {}),
+      ...(r.contactsRaw ? { contacts: r.contactsRaw } : {}),
+      ...(r.aggRaw ? { aggregator: r.aggRaw } : {}),
+      ...(si ? { startupIndia: si.raw || si } : {}),
+      enrichedAt: new Date().toISOString(),
+    };
+    return this.repo.save(c);
   }
 
   /** Continuously cycles through companies to re-enrich and correct data in the background. */

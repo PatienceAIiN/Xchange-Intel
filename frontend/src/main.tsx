@@ -9,6 +9,7 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 
 import Landing from './pages/Landing';
+import Process from './pages/Process';
 import DpdpBanner from './components/DpdpBanner';
 
 function Protected({ children }: { children: JSX.Element }) {
@@ -35,6 +36,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 </Protected>
               }
             />
+            <Route path="/process" element={<Protected><Process /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <DpdpBanner />

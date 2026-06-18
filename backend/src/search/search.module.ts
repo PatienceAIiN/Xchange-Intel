@@ -25,6 +25,6 @@ import { GroqProvider } from './providers/groq.provider';
     TracxnProvider,
     GroqProvider,
   ],
-  exports: [SearchService, StartupIndiaProvider],
+  exports: [SearchService, StartupIndiaProvider, McaProvider],
 })
 export class SearchModule {}

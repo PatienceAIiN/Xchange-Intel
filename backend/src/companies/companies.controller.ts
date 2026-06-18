@@ -62,6 +62,13 @@ export class CompaniesController {
     return this.companies.enrich(id);
   }
 
+  // contacts-only enrichment (website + aggregator) — used by the background filler
+  @Post(':id/fill-contacts')
+  async fillContacts(@Param('id') id: string) {
+    const c = await this.companies.findOne(id);
+    return this.companies.enrichContactsOnly(c);
+  }
+
   @Throttle({ default: { limit: parseInt(process.env.RATE_LIMIT_DEFAULT || '100', 10), ttl: 60000 } })
   @Post(':id/ask')
   ask(@Param('id') id: string, @Body() body: { question: string }) {

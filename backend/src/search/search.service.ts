@@ -406,6 +406,31 @@ export class SearchService {
     return this.groq.ask(name, dataJson, question);
   }
 
+  /**
+   * Lightweight, authentic CONTACTS-only enrichment for an already-identified company:
+   * resolve/verify website -> scrape genuine contacts -> registry aggregator (by CIN).
+   * No MCA / Groq / Wiki calls (fast, doesn't spend the data.gov quota). Never fabricates.
+   */
+  async extractContacts(name: string, cin: string | null, website: string | null, resolveWebsite = true) {
+    let site = website || null;
+    if (!site && resolveWebsite) site = await this.websiteResolver.resolve(name).catch(() => null);
+    const [contacts, agg, si] = await Promise.all([
+      this.contact.scrape(site).catch(() => null),
+      cin ? this.aggregator.lookup(name, cin).catch(() => null) : Promise.resolve(null),
+      this.startupIndia.lookup(name).catch(() => null), // genuine DPIIT recognition check
+    ]);
+    return {
+      website: site,
+      emails: this.uniq([...(contacts?.emails || []), ...(agg?.emails || [])]),
+      phones: this.uniq([...(contacts?.phones || [])]),
+      socials: { ...(contacts?.socials || {}) },
+      directors: this.uniq(agg?.directors || []).filter((n) => this.isPersonName(n)),
+      startupIndia: si || undefined,
+      contactsRaw: contacts || undefined,
+      aggRaw: agg || undefined,
+    };
+  }
+
   private firstSiteLink(g: { organic: { link: string }[] } | null | undefined): string | null {
     if (!g || !g.organic) return null;
     const skip = /wikipedia|linkedin|crunchbase|zaubacorp|tofler|facebook|twitter|instagram|indiamart|justdial|ambitionbox|glassdoor|99corporates|cleartax|instancial|thecompanycheck|economictimes|pitchbook|bloomberg|youtube|medium|corpdir|companydetails|tracxn|ycombinator|owler|zoominfo|apollo|lusha|signalhire|dnb\.com|tradeindia|exportersindia|quora|fundoodata|vccircle|entreprenuer|g2\.com|capterra|trustpilot|indeed|naukri|moneycontrol|quickcompany|vakilsearch|indiafilings|sulekha|dialme|yellowpages|yelp|mca\.gov|startupindia|upwork|fiverr|freelancer|owler|goodfirms|clutch\.co|b2b/i;

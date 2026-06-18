@@ -30,6 +30,17 @@ services:
         value: "10"
       - key: RATE_LIMIT_SCRAPER
         value: "20"
+      # auto-run the full pipeline on Render (import -> contact fill -> emails)
+      - key: AUTO_PROCESS
+        value: "true"
+      - key: MCA_IMPORT_TARGET
+        value: "50000"
+      - key: COMPLETION_EMAIL
+        value: harsh@patienceai.in
+      - key: BREVO_SENDER_EMAIL
+        value: info@patienceai.in
+      - key: BREVO_SENDER_NAME
+        value: Nexus Exchange
       # Secrets — set these in the Render dashboard (do NOT commit real values):
       - key: SECRET_KEY
         sync: false
@@ -40,4 +51,8 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: DATAGOV_API_KEY
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: SITE_URL
         sync: false

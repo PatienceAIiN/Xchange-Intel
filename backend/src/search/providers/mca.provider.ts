@@ -55,6 +55,34 @@ export class McaProvider {
     return null;
   }
 
+  /**
+   * Fetch a raw page of MCA Company Master Data for bulk import.
+   * Returns { records, blocked } — blocked=true when the key is unauthorised/rate-limited
+   * so the caller can back off (we never fabricate to fill the gap).
+   */
+  async listPage(offset: number, limit = 100): Promise<{ records: any[]; blocked: boolean; error: boolean }> {
+    const base = this.base;
+    if (!base) return { records: [], blocked: false, error: false };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(`${base}&offset=${offset}&limit=${limit}`, {
+          signal: AbortSignal.timeout(25000),
+        });
+        if (res.status === 403) return { records: [], blocked: true, error: false };
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data: any = await res.json();
+        return { records: data.records || [], blocked: false, error: false };
+      } catch (e) {
+        if (attempt === 2) {
+          this.log.warn(`MCA listPage offset ${offset} failed after retries: ${e}`);
+          return { records: [], blocked: false, error: true }; // transient, not end-of-data
+        }
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+      }
+    }
+    return { records: [], blocked: false, error: true };
+  }
+
   private async query(field: 'CIN' | 'CompanyName', value: string): Promise<McaResult | null> {
     const base = this.base;
     if (!base) return null;
