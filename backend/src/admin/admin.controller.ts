@@ -4,6 +4,7 @@ import { UsersService } from '../users/users.service';
 import { CompaniesService } from '../companies/companies.service';
 import { McaImportService } from '../companies/mca-import.service';
 import { ContactFillService } from '../companies/contact-fill.service';
+import { ProcessService } from '../companies/process.service';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
@@ -14,6 +15,7 @@ export class AdminController {
     private companies: CompaniesService,
     private mcaImport: McaImportService,
     private contactFill: ContactFillService,
+    private process: ProcessService,
   ) {}
 
   // start the live contact-filler (runs in background; watch ETA/filled data in server logs)
@@ -26,6 +28,13 @@ export class AdminController {
   @Get('fill-contacts/status')
   fillStatus() {
     return this.contactFill.getStats();
+  }
+
+  // start the full pipeline (MCA + Startup India + contacts + backup) with emails
+  @Post('process/start')
+  startProcess() {
+    this.process.orchestrate().catch(() => {});
+    return { started: true };
   }
 
   // start a bulk MCA import (runs in background; watch ETA in server logs)

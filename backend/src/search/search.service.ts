@@ -406,6 +406,19 @@ export class SearchService {
     return this.groq.ask(name, dataJson, question);
   }
 
+  /** Resolve a genuine CIN for a company by name: MCA exact-name → ZaubaCorp (verified
+   *  against MCA when possible). Returns the CIN + the MCA record if found. Authentic only. */
+  async resolveCin(name: string): Promise<{ cin: string | null; mca: any | null }> {
+    let mca = await this.mca.byName(name).catch(() => null);
+    if (mca) return { cin: mca.cin, mca };
+    const zaubaCin = await this.zauba.resolveCin(name).catch(() => null);
+    if (zaubaCin) {
+      mca = await this.mca.byCin(zaubaCin).catch(() => null);
+      return { cin: zaubaCin, mca };
+    }
+    return { cin: null, mca: null };
+  }
+
   /**
    * Lightweight, authentic CONTACTS-only enrichment for an already-identified company:
    * resolve/verify website -> scrape genuine contacts -> registry aggregator (by CIN).

@@ -5,6 +5,7 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DownloadIcon from '@mui/icons-material/Download';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { api } from '../api';
 
 const fmt = (n?: number) => (n ?? 0).toLocaleString();
@@ -22,12 +23,12 @@ function Dot({ on }: { on: boolean }) {
   );
 }
 
-function PhaseCard({ title, done, pct, lines, active, onClick }: { title: string; done: boolean; pct: number | null; lines: [string, string][]; active: boolean; onClick: () => void }) {
+function PhaseCard({ title, done, pct, lines, active, onClick, clickable = true }: { title: string; done: boolean; pct: number | null; lines: [string, string][]; active: boolean; onClick: () => void; clickable?: boolean }) {
   return (
-    <Paper elevation={active ? 6 : 2} onClick={onClick} sx={{
-      p: 2.5, opacity: done ? 0.6 : 1, position: 'relative', cursor: 'pointer',
+    <Paper elevation={active ? 6 : 2} onClick={clickable ? onClick : undefined} sx={{
+      p: 2.5, opacity: done ? 0.6 : 1, position: 'relative', cursor: clickable ? 'pointer' : 'default',
       border: active ? '2px solid #1565c0' : '2px solid transparent', transition: '0.15s',
-      '&:hover': { boxShadow: 6 },
+      '&:hover': clickable ? { boxShadow: 6 } : {},
     }}>
       <Stack direction="row" alignItems="center" spacing={1} mb={1}>
         <Dot on={!done} />
@@ -35,9 +36,11 @@ function PhaseCard({ title, done, pct, lines, active, onClick }: { title: string
         <Chip size="small" label={done ? 'COMPLETED' : 'PROCESSING'} color={done ? 'default' : 'success'}
           variant={done ? 'outlined' : 'filled'} sx={{ ml: 'auto' }} />
       </Stack>
-      <Typography variant="caption" color="primary" sx={{ display: 'block', mb: 1 }}>
-        {active ? '● showing logs below' : 'click to view its logs'}
-      </Typography>
+      {clickable && (
+        <Typography variant="caption" color="primary" sx={{ display: 'block', mb: 1 }}>
+          {active ? '● showing logs below' : 'click to view its logs'}
+        </Typography>
+      )}
       {pct != null && <LinearProgress variant="determinate" value={Math.min(pct, 100)} sx={{ height: 8, borderRadius: 1, mb: 1.5 }} />}
       <Table size="small"><TableBody>
         {lines.map(([k, v]) => (
@@ -79,7 +82,7 @@ export default function Process() {
       } catch { if (alive) setErr(true); }
     };
     tick();
-    const t = setInterval(tick, 3000);
+    const t = setInterval(tick, 6000);
     return () => { alive = false; clearInterval(t); };
   }, []);
 
@@ -95,6 +98,12 @@ export default function Process() {
   };
 
   const mca = st?.phases?.mca, si = st?.phases?.startupIndia, ct = st?.phases?.contacts;
+  const cov = st?.coverage;
+  const pctOf = (n?: number) => (cov?.total ? Math.round(((n || 0) / cov.total) * 100) : 0);
+  const copyLogs = () => {
+    const text = (logs.lines || []).map((l: any) => `${l.t.slice(11, 19)} [${l.ctx}] ${l.msg}`).join('\n');
+    navigator.clipboard?.writeText(text);
+  };
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#f4f6f8' }}>
@@ -117,14 +126,44 @@ export default function Process() {
             active={filter.key === 'mca'} onClick={() => pickFilter('mca', 'MCA Master Data', 'mca')}
             pct={mca?.target ? (mca.added / mca.target) * 100 : null}
             lines={[['Imported', `${fmt(mca?.added)} / ${fmt(mca?.target)}`], ['Rate', `${mca?.ratePerSec ?? 0}/s`], ['ETA', eta(mca?.etaSeconds)], ['Status', mca?.blocked ? 'key blocked' : mca?.running ? 'pulling' : 'idle']]} />
-          <PhaseCard title="Startup India (DPIIT)" done={false}
-            active={filter.key === 'si'} onClick={() => pickFilter('si', 'Startup India', 'ingestion|startup')}
-            pct={null}
-            lines={[['Imported (runs)', `${fmt(si?.totalAdded)} (${si?.runs ?? 0})`], ['Last sync', si?.lastRunAt ? new Date(si.lastRunAt).toLocaleTimeString() : '—'], ['Pending enrich', fmt(si?.pendingEnrichment)], ['Interval', `${si?.intervalMinutes ?? 12} min`]]} />
+          <PhaseCard title="Startup India (DPIIT)" done={!!si?.done}
+            active={filter.key === 'si'} onClick={() => pickFilter('si', 'Startup India', 'startupimport|startup|ingestion')}
+            pct={si?.target ? (si.added / si.target) * 100 : null}
+            lines={[['Imported', `${fmt(si?.added)} / ${fmt(si?.target)}`], ['Rate', `${si?.ratePerSec ?? 0}/s`], ['ETA', eta(si?.etaSeconds)], ['Status', si?.running ? 'pulling' : 'idle']]} />
           <PhaseCard title="Contact Filling" done={!!ct?.done}
             active={filter.key === 'ct'} onClick={() => pickFilter('ct', 'Contact Filling', 'contactfill|contact|website|aggregator|zauba')}
             pct={ct?.total ? (ct.processed / ct.total) * 100 : null}
             lines={[['Processed', `${fmt(ct?.processed)} / ${fmt(ct?.total)}`], ['With contacts', fmt(ct?.withContacts)], ['Rate', `${ct?.ratePerSec ?? 0}/s`], ['ETA', eta(ct?.etaSeconds)], ['Last', (ct?.lastCompany || '—').slice(0, 28)]]} />
+        </Box>
+
+        {/* Cards 4, 5 & 6 — live coverage + completion + backup replication (authentic) */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3,1fr)' }, gap: 2, mb: 3 }}>
+          <PhaseCard title="Data Coverage" done={false} active={false} onClick={() => {}} clickable={false}
+            pct={null}
+            lines={[
+              ['With CIN', `${fmt(cov?.withCin)} (${pctOf(cov?.withCin)}%)`],
+              ['With contacts', `${fmt(cov?.withContacts)} (${pctOf(cov?.withContacts)}%)`],
+              ['DPIIT recognised', `${fmt(cov?.withDpiit)} (${pctOf(cov?.withDpiit)}%)`],
+              ['Total companies', fmt(cov?.total)],
+            ]} />
+          <PhaseCard title="Completion / Missing" done={!!(ct?.done && si?.done && mca?.done)}
+            active={false} onClick={() => {}} clickable={false}
+            pct={cov?.total ? (cov.enriched / cov.total) * 100 : null}
+            lines={[
+              ['Enriched (checked)', `${fmt(cov?.enriched)} / ${fmt(cov?.total)}`],
+              ['Missing contacts', fmt((cov?.total || 0) - (cov?.withContacts || 0))],
+              ['Missing CIN', fmt((cov?.total || 0) - (cov?.withCin || 0))],
+              ['Status', (ct?.done && si?.done && mca?.done) ? 'ALL COMPLETE' : 'filling…'],
+            ]} />
+          <PhaseCard title="Backup Replication" done={!!(st?.phases?.backup && !st.phases.backup.running && st.phases.backup.copied > 0)}
+            active={false} onClick={() => {}} clickable={false}
+            pct={st?.phases?.backup?.eligible ? (st.phases.backup.copied / st.phases.backup.eligible) * 100 : null}
+            lines={[
+              ['Replicated', `${fmt(st?.phases?.backup?.copied)} / ${fmt(st?.phases?.backup?.eligible)}`],
+              ['Rate', `${st?.phases?.backup?.ratePerSec ?? 0}/s`],
+              ['ETA', eta(st?.phases?.backup?.etaSeconds)],
+              ['Target', 'backup DB (completed only)'],
+            ]} />
         </Box>
 
         <Paper elevation={2}>
@@ -136,6 +175,7 @@ export default function Process() {
               <Chip size="small" label="show all" onClick={() => { setFilter({ key: '', label: 'All', terms: '' }); setLogPage(0); }} />
             )}
             <Box sx={{ flexGrow: 1 }} />
+            <Button size="small" startIcon={<ContentCopyIcon />} onClick={copyLogs}>Copy</Button>
             <IconButton onClick={() => setShowLogs((s) => !s)}>
               <ExpandMoreIcon sx={{ transform: showLogs ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
             </IconButton>

@@ -71,33 +71,41 @@ export class CompaniesService implements OnModuleInit {
     return { company, cacheHit };
   }
 
-  /** Bulk-seed startups from Startup India records. Returns counts of new vs existing. */
-  async seedFromStartupIndia(records: any[]): Promise<{ added: number; skipped: number }> {
-    let added = 0;
+  /** Load all existing slugs once (for bulk-import dedup). */
+  async loadSlugSet(): Promise<Set<string>> {
+    return new Set((await this.repo.find({ select: ['slug'] })).map((c) => c.slug));
+  }
+
+  /** Bulk-seed Startup India records (deduped by slug). Pass a shared `seen` set to dedup
+   *  across many pages efficiently; the set is mutated with newly-added slugs. */
+  async seedFromStartupIndia(records: any[], seen?: Set<string>): Promise<{ added: number; skipped: number }> {
+    if (!records?.length) return { added: 0, skipped: 0 };
+    const existing = seen || (await this.loadSlugSet());
+    const names = (a: any[]) => (a || []).map((x) => x?.name || x).filter(Boolean).join(', ');
+    const toInsert: Partial<Company>[] = [];
     let skipped = 0;
     for (const r of records) {
       const name = (r.name || '').trim();
       if (!name) { skipped++; continue; }
       const slug = this.slugify(name);
-      const existing = await this.repo.findOne({ where: { slug }, select: ['id'] });
-      if (existing) { skipped++; continue; }
-      const names = (a: any[]) => (a || []).map((x) => x?.name || x).filter(Boolean).join(', ');
-      await this.repo.save(
-        this.repo.create({
-          name,
-          slug,
-          dpiitNumber: r.dippNumber || null,
-          industry: names(r.industries),
-          stage: names(r.stages),
-          city: r.city || '',
-          state: r.state || '',
-          address: [r.city, r.state].filter(Boolean).join(', '),
-          startupIndiaRecognised: true,
-          sources: ['startup_india'],
-          raw: { startupIndia: r },
-        }),
-      );
-      added++;
+      if (!slug || existing.has(slug)) { skipped++; continue; }
+      existing.add(slug);
+      toInsert.push({
+        name, slug,
+        dpiitNumber: r.dippNumber || null,
+        industry: names(r.industries),
+        stage: names(r.stages),
+        city: r.city || '', state: r.state || '',
+        address: [r.city, r.state].filter(Boolean).join(', '),
+        startupIndiaRecognised: true,
+        sources: ['startup_india'],
+        raw: { startupIndia: r },
+      });
+    }
+    let added = 0;
+    for (let i = 0; i < toInsert.length; i += 200) {
+      await this.repo.save(toInsert.slice(i, i + 200).map((p) => this.repo.create(p)));
+      added += Math.min(200, toInsert.length - i);
     }
     return { added, skipped };
   }
@@ -320,7 +328,25 @@ export class CompaniesService implements OnModuleInit {
   /** Contacts-only enrichment (website + aggregator) for an identified company.
    *  Authentic, preserves existing data, stamps raw.enrichedAt. Fast (no MCA/LLM). */
   async enrichContactsOnly(c: Company, bulk = false): Promise<Company> {
-    const r = await this.search.extractContacts(c.name, c.cin, c.website, !bulk);
+    // resolve a genuine CIN first when missing (MCA name → ZaubaCorp) so startups get
+    // their CIN + MCA details, and the aggregator can then fetch registered contacts.
+    if (!c.cin) {
+      const id = await this.search.resolveCin(c.name).catch(() => null);
+      if (id?.cin) {
+        c.cin = id.cin;
+        if (!c.sources.includes('zauba') && !c.sources.includes('mca')) c.sources = [...c.sources, id.mca ? 'mca' : 'zauba'];
+        if (id.mca) {
+          c.status = c.status || id.mca.status || '';
+          c.address = c.address || id.mca.address || '';
+          c.authorizedCapital = c.authorizedCapital || id.mca.raw?.AuthorizedCapital || '';
+          c.paidUpCapital = c.paidUpCapital || id.mca.raw?.PaidupCapital || '';
+          if (!c.sources.includes('mca')) c.sources = [...c.sources, 'mca'];
+          c.raw = { ...(c.raw || {}), mca: id.mca.raw };
+        }
+      }
+    }
+    // resolveWebsite=true always — use every source (website + aggregator + SI), never skip
+    const r = await this.search.extractContacts(c.name, c.cin, c.website, true);
     const uni = (a?: string[], b?: string[]) =>
       [...new Set([...(a || []), ...(b || [])].filter(Boolean).map((s) => String(s).trim()))];
     c.website = c.website || r.website;
@@ -356,6 +382,19 @@ export class CompaniesService implements OnModuleInit {
       .orderBy('c.updatedAt', 'ASC')
       .limit(limit)
       .getMany();
+  }
+
+  /** Live data-coverage counts for the dashboard (4th card). */
+  async coverage(): Promise<{ total: number; withCin: number; withContacts: number; withDpiit: number; enriched: number }> {
+    const qb = () => this.repo.createQueryBuilder('c');
+    const [total, withCin, withContacts, withDpiit, enriched] = await Promise.all([
+      qb().getCount(),
+      qb().where("c.cin IS NOT NULL AND c.cin <> ''").getCount(),
+      qb().where("jsonb_array_length(c.emails) > 0 OR jsonb_array_length(c.phones) > 0").getCount(),
+      qb().where("c.\"dpiitNumber\" IS NOT NULL AND c.\"dpiitNumber\" <> ''").getCount(),
+      qb().where("c.raw->>'enrichedAt' IS NOT NULL").getCount(),
+    ]);
+    return { total, withCin, withContacts, withDpiit, enriched };
   }
 
   /** Cheap COUNT of un-enriched companies (no row hydration). */

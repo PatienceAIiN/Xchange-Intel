@@ -7,7 +7,9 @@ import { CompaniesController } from './companies.controller';
 import { IngestionService } from './ingestion.service';
 import { SourceImportService } from './source-import.service';
 import { McaImportService } from './mca-import.service';
+import { StartupImportService } from './startup-import.service';
 import { ContactFillService } from './contact-fill.service';
+import { BackupService } from './backup.service';
 import { ProcessService } from './process.service';
 import { ProcessController } from './process.controller';
 import { EmailService } from '../common/email.service';
@@ -18,9 +20,9 @@ import { UsersModule } from '../users/users.module';
   imports: [TypeOrmModule.forFeature([Company, SearchLog]), SearchModule, UsersModule],
   providers: [
     CompaniesService, IngestionService, SourceImportService, McaImportService,
-    ContactFillService, ProcessService, EmailService,
+    StartupImportService, ContactFillService, BackupService, ProcessService, EmailService,
   ],
   controllers: [CompaniesController, ProcessController],
-  exports: [CompaniesService, McaImportService, ContactFillService],
+  exports: [CompaniesService, McaImportService, StartupImportService, ContactFillService, ProcessService],
 })
 export class CompaniesModule {}

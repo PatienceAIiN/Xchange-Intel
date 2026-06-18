@@ -6,7 +6,7 @@ import { CompaniesService } from './companies.service';
 
 const CONCURRENCY = 6;
 const CSV_PATH = process.env.EXPORT_OUT || '/home/harsh/Documents/companies_export.csv';
-const CSV_EVERY = 300; // refresh the CSV file every N filled companies
+const CSV_EVERY = 5000; // refresh CSV every N filled (full-table scan — keep infrequent for Neon free tier)
 
 /**
  * Continuously fills GENUINE contact data (website + registry aggregator) into every

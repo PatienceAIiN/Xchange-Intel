@@ -34,7 +34,9 @@ services:
       - key: AUTO_PROCESS
         value: "true"
       - key: MCA_IMPORT_TARGET
-        value: "50000"
+        value: "300000"
+      - key: SI_IMPORT_TARGET
+        value: "454000"
       - key: COMPLETION_EMAIL
         value: harsh@patienceai.in
       - key: BREVO_SENDER_EMAIL
@@ -47,6 +49,8 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: SOURCE_DATABASE_URL
+        sync: false
+      - key: BACKUP_DATABASE_URL
         sync: false
       - key: GROQ_API_KEY
         sync: false
