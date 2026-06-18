@@ -22,15 +22,22 @@ function Dot({ on }: { on: boolean }) {
   );
 }
 
-function PhaseCard({ title, done, pct, lines }: { title: string; done: boolean; pct: number | null; lines: [string, string][] }) {
+function PhaseCard({ title, done, pct, lines, active, onClick }: { title: string; done: boolean; pct: number | null; lines: [string, string][]; active: boolean; onClick: () => void }) {
   return (
-    <Paper elevation={2} sx={{ p: 2.5, opacity: done ? 0.55 : 1, position: 'relative' }}>
+    <Paper elevation={active ? 6 : 2} onClick={onClick} sx={{
+      p: 2.5, opacity: done ? 0.6 : 1, position: 'relative', cursor: 'pointer',
+      border: active ? '2px solid #1565c0' : '2px solid transparent', transition: '0.15s',
+      '&:hover': { boxShadow: 6 },
+    }}>
       <Stack direction="row" alignItems="center" spacing={1} mb={1}>
         <Dot on={!done} />
         <Typography variant="h6" fontWeight={700}>{title}</Typography>
         <Chip size="small" label={done ? 'COMPLETED' : 'PROCESSING'} color={done ? 'default' : 'success'}
           variant={done ? 'outlined' : 'filled'} sx={{ ml: 'auto' }} />
       </Stack>
+      <Typography variant="caption" color="primary" sx={{ display: 'block', mb: 1 }}>
+        {active ? '● showing logs below' : 'click to view its logs'}
+      </Typography>
       {pct != null && <LinearProgress variant="determinate" value={Math.min(pct, 100)} sx={{ height: 8, borderRadius: 1, mb: 1.5 }} />}
       <Table size="small"><TableBody>
         {lines.map(([k, v]) => (
@@ -48,7 +55,16 @@ export default function Process() {
   const [logPage, setLogPage] = useState(0);
   const [showLogs, setShowLogs] = useState(true);
   const [err, setErr] = useState(false);
+  // which phase's logs to show: '' = all, or a pipe-list of contexts
+  const [filter, setFilter] = useState<{ key: string; label: string; terms: string }>({ key: '', label: 'All', terms: '' });
   const pageRef = useRef(0); pageRef.current = logPage;
+  const filterRef = useRef(''); filterRef.current = filter.terms;
+
+  const pickFilter = (key: string, label: string, terms: string) => {
+    if (filter.key === key) { setFilter({ key: '', label: 'All', terms: '' }); }
+    else { setFilter({ key, label, terms }); }
+    setLogPage(0);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -56,7 +72,7 @@ export default function Process() {
       try {
         const [s, l] = await Promise.all([
           api.get('/process/status'),
-          api.get(`/process/logs?page=${pageRef.current}&size=25`),
+          api.get(`/process/logs?page=${pageRef.current}&size=25&filter=${encodeURIComponent(filterRef.current)}`),
         ]);
         if (!alive) return;
         setSt(s.data); setLogs(l.data); setErr(false);
@@ -98,21 +114,28 @@ export default function Process() {
 
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3,1fr)' }, gap: 2, mb: 3 }}>
           <PhaseCard title="MCA Master Data" done={!!mca?.done}
+            active={filter.key === 'mca'} onClick={() => pickFilter('mca', 'MCA Master Data', 'mca')}
             pct={mca?.target ? (mca.added / mca.target) * 100 : null}
             lines={[['Imported', `${fmt(mca?.added)} / ${fmt(mca?.target)}`], ['Rate', `${mca?.ratePerSec ?? 0}/s`], ['ETA', eta(mca?.etaSeconds)], ['Status', mca?.blocked ? 'key blocked' : mca?.running ? 'pulling' : 'idle']]} />
           <PhaseCard title="Startup India (DPIIT)" done={false}
+            active={filter.key === 'si'} onClick={() => pickFilter('si', 'Startup India', 'ingestion|startup')}
             pct={null}
             lines={[['Imported (runs)', `${fmt(si?.totalAdded)} (${si?.runs ?? 0})`], ['Last sync', si?.lastRunAt ? new Date(si.lastRunAt).toLocaleTimeString() : '—'], ['Pending enrich', fmt(si?.pendingEnrichment)], ['Interval', `${si?.intervalMinutes ?? 12} min`]]} />
           <PhaseCard title="Contact Filling" done={!!ct?.done}
+            active={filter.key === 'ct'} onClick={() => pickFilter('ct', 'Contact Filling', 'contactfill|contact|website|aggregator|zauba')}
             pct={ct?.total ? (ct.processed / ct.total) * 100 : null}
             lines={[['Processed', `${fmt(ct?.processed)} / ${fmt(ct?.total)}`], ['With contacts', fmt(ct?.withContacts)], ['Rate', `${ct?.ratePerSec ?? 0}/s`], ['ETA', eta(ct?.etaSeconds)], ['Last', (ct?.lastCompany || '—').slice(0, 28)]]} />
         </Box>
 
         <Paper elevation={2}>
-          <Stack direction="row" alignItems="center" sx={{ p: 1.5 }}>
-            <Typography variant="subtitle1" fontWeight={700} sx={{ flexGrow: 1 }}>
-              Live logs ({fmt(logs.total)})
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ p: 1.5 }}>
+            <Typography variant="subtitle1" fontWeight={700}>
+              Live logs — {filter.label} ({fmt(logs.total)})
             </Typography>
+            {filter.key && (
+              <Chip size="small" label="show all" onClick={() => { setFilter({ key: '', label: 'All', terms: '' }); setLogPage(0); }} />
+            )}
+            <Box sx={{ flexGrow: 1 }} />
             <IconButton onClick={() => setShowLogs((s) => !s)}>
               <ExpandMoreIcon sx={{ transform: showLogs ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
             </IconButton>

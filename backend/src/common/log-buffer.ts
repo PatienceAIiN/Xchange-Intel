@@ -10,9 +10,13 @@ class LogBuffer {
     this.buf.push({ t: new Date().toISOString(), level, ctx, msg: String(msg).slice(0, 500) });
     if (this.buf.length > this.max) this.buf.splice(0, this.buf.length - this.max);
   }
-  /** newest-first page */
-  page(page = 0, size = 50) {
-    const arr = [...this.buf].reverse();
+  /** newest-first page, optionally filtered by context (pipe-separated terms). */
+  page(page = 0, size = 50, filter?: string) {
+    let arr = [...this.buf].reverse();
+    if (filter) {
+      const terms = filter.toLowerCase().split('|').map((t) => t.trim()).filter(Boolean);
+      arr = arr.filter((l) => terms.some((t) => l.ctx.toLowerCase().includes(t)));
+    }
     const start = page * size;
     return { total: arr.length, page, size, lines: arr.slice(start, start + size) };
   }

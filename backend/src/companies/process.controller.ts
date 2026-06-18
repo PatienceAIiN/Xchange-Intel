@@ -14,8 +14,8 @@ export class ProcessController {
   }
 
   @Get('logs')
-  logs(@Query('page') page = '0', @Query('size') size = '50') {
-    return logBuffer.page(parseInt(page, 10) || 0, Math.min(parseInt(size, 10) || 50, 200));
+  logs(@Query('page') page = '0', @Query('size') size = '50', @Query('filter') filter?: string) {
+    return logBuffer.page(parseInt(page, 10) || 0, Math.min(parseInt(size, 10) || 50, 200), filter);
   }
 
   @Post('start')
