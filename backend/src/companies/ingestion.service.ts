@@ -43,13 +43,13 @@ export class IngestionService implements OnModuleInit {
     setTimeout(() => this.runIngest().catch(() => {}), 20000);
   }
 
-  @Interval('si-ingest', INTERVAL_MS)
+  // NOTE: the 12-min trickle ingest and 90s full-aggregate enrich are DISABLED — they
+  // hammered the MCA key (429) and produced AI-only rows. Bulk import + ContactFillService
+  // (contacts-only, authentic) now own ingestion & enrichment. Kept for manual use only.
   async scheduled() {
     await this.runIngest().catch((e) => this.log.warn(`ingest run failed: ${e}`));
   }
 
-  /** Background pre-enrichment so opening any company shows ready, authenticated data. */
-  @Interval('si-enrich', ENRICH_INTERVAL_MS)
   async scheduledEnrich() {
     if (this.enriching) return;
     this.enriching = true;

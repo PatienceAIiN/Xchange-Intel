@@ -49,54 +49,56 @@ export class ProcessService implements OnModuleInit {
     await this.email.send(COMPLETION_EMAIL, `✅ Xchange Intel — ${phase} complete`, summaryHtml).catch(() => {});
   }
 
-  /** MCA import + Startup India import (parallel) -> contact fill. Each phase emails on
-   *  completion; any failure emails the cause and the pipeline continues where possible. */
+  /**
+   * Launches every phase INDEPENDENTLY (fire-and-forget) so a stalled/blocked phase never
+   * holds up the others. Contact filling + backup run continuously regardless of the
+   * imports. Each phase self-heals, emails on completion, and emails the cause on failure.
+   */
   async orchestrate() {
     if (this.phases.orchestrating) return;
     this.phases.orchestrating = true;
-    try {
-      // Phase 1 (parallel): MCA bulk import + Startup India bulk import
-      await Promise.all([
-        (async () => {
-          try {
-            await this.mca.run(MCA_TARGET);
-            const s = this.mca.getStats();
-            if (s.blocked) { await this.fail('MCA import', new Error('data.gov key unauthorised/rate-limited')); return; }
-            this.phases.mcaDone = true;
-            const total = await this.companies.countCompanies();
-            await this.done('MCA import',
-              `<p>Imported <b>${s.added.toLocaleString()}</b> MCA companies. Total: <b>${total.toLocaleString()}</b>.</p>`);
-          } catch (e) { await this.fail('MCA import', e); }
-        })(),
-        (async () => {
-          try {
-            await this.startupImport.run(SI_TARGET);
-            const s = this.startupImport.getStats();
-            this.phases.startupDone = true;
-            await this.done('Startup India import',
-              `<p>Imported <b>${s.added.toLocaleString()}</b> DPIIT-recognised startups.</p>`);
-          } catch (e) { await this.fail('Startup India import', e); }
-        })(),
-      ]);
 
-      // Phase 2: contact filling (after identities are in)
+    // MCA bulk import (resumes from saved offset)
+    (async () => {
+      try {
+        await this.mca.run(MCA_TARGET);
+        const s = this.mca.getStats();
+        if (s.blocked) return this.fail('MCA import', new Error('data.gov key 429/unauthorised — will resume'));
+        this.phases.mcaDone = true;
+        await this.done('MCA import', `<p>Imported <b>${s.added.toLocaleString()}</b> new MCA companies.</p>`);
+      } catch (e) { await this.fail('MCA import', e); }
+    })();
+
+    // Startup India bulk import (independent — never blocks contacts)
+    (async () => {
+      try {
+        await this.startupImport.run(SI_TARGET);
+        this.phases.startupDone = true;
+        await this.done('Startup India import', `<p>Imported <b>${this.startupImport.getStats().added.toLocaleString()}</b> startups.</p>`);
+      } catch (e) { await this.fail('Startup India import', e); }
+    })();
+
+    // Contact filling — starts NOW, runs continuously as companies arrive
+    (async () => {
       try {
         await this.contactFill.run();
-        const cs = this.contactFill.getStats();
         this.phases.contactsDone = true;
-        await this.done('Contact filling',
-          `<p>Processed <b>${cs.processed.toLocaleString()}</b>; <b>${cs.withContacts.toLocaleString()}</b> with verified contacts.</p>`);
+        const cs = this.contactFill.getStats();
+        await this.done('Contact filling', `<p>Processed <b>${cs.processed.toLocaleString()}</b>; <b>${cs.withContacts.toLocaleString()}</b> with verified contacts.</p>`);
       } catch (e) { await this.fail('Contact filling', e); }
+    })();
 
-      // Phase 3: backup completed/authentic data to the backup DB
+    // Backup replication — periodic loop of completed/authentic rows
+    (async () => {
       try {
-        await this.backup.run();
-        const bs = this.backup.getStats();
-        await this.done('Backup replication', `<p>Replicated <b>${bs.copied.toLocaleString()}</b> completed companies to the backup database.</p>`);
+        for (let i = 0; i < 200; i++) {
+          await this.backup.run();
+          await new Promise((r) => setTimeout(r, 300000)); // re-replicate new completed rows every 5 min
+        }
       } catch (e) { await this.fail('Backup replication', e); }
-    } finally {
-      this.phases.orchestrating = false;
-    }
+    })();
+
+    this.phases.orchestrating = false;
   }
 
   private covCache: { at: number; data: any } = { at: 0, data: null };

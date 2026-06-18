@@ -18,6 +18,7 @@ import { ConsentModule } from './consent/consent.module';
 import { User } from './users/user.entity';
 import { Company } from './companies/company.entity';
 import { SearchLog } from './companies/search-log.entity';
+import { ProcessState } from './companies/process-state.entity';
 import { ConsentEvent } from './consent/consent-event.entity';
 
 @Module({

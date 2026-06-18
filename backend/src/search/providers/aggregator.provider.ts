@@ -27,9 +27,13 @@ export class AggregatorProvider {
   async lookup(name: string, cin: string | null): Promise<AggregatorResult | null> {
     if (!cin) return null;
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const upper = name.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     const urls = [
       `https://www.indiafilings.com/search/${slug}-cin-${cin}`,
       `https://www.thecompanycheck.com/company/${slug}/${cin}`,
+      `https://www.zaubacorp.com/company/${upper}/${cin}`,
+      `https://www.tofler.in/${slug}/${cin}`,
+      `https://www.instafinancials.com/company/${slug}/${cin}`,
     ];
 
     const emails = new Set<string>();

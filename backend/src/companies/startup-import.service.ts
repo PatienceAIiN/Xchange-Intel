@@ -36,7 +36,7 @@ export class StartupImportService {
     };
     this.log.log(`Startup India bulk import started — target ${target.toLocaleString()}`);
     const seen = await this.companies.loadSlugSet();
-    let page = 0, emptyStreak = 0;
+    let page = 0, emptyStreak = 0, noNewStreak = 0;
     try {
       while (this.stats.added < target) {
         const records = await this.startupIndia.listPage(page, PAGE);
@@ -48,6 +48,9 @@ export class StartupImportService {
         }
         emptyStreak = 0;
         const { added, skipped } = await this.companies.seedFromStartupIndia(records, seen);
+        // pagination yields only dupes (API caps results) — stop after a stretch of no-new
+        if (added === 0) { if (++noNewStreak >= 40) { this.log.log('Startup India: no new results — directory exhausted for this query.'); break; } }
+        else noNewStreak = 0;
         page++;
         this.stats.added += added;
         this.stats.skipped += skipped;

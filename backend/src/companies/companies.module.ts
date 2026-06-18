@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Company } from './company.entity';
 import { SearchLog } from './search-log.entity';
+import { ProcessState } from './process-state.entity';
 import { CompaniesService } from './companies.service';
 import { CompaniesController } from './companies.controller';
 import { IngestionService } from './ingestion.service';
@@ -17,7 +18,7 @@ import { SearchModule } from '../search/search.module';
 import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Company, SearchLog]), SearchModule, UsersModule],
+  imports: [TypeOrmModule.forFeature([Company, SearchLog, ProcessState]), SearchModule, UsersModule],
   providers: [
     CompaniesService, IngestionService, SourceImportService, McaImportService,
     StartupImportService, ContactFillService, BackupService, ProcessService, EmailService,

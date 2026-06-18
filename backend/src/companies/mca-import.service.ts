@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { CompaniesService } from './companies.service';
 import { McaProvider } from '../search/providers/mca.provider';
+import { ProcessState } from './process-state.entity';
 
 const PAGE = 100; // data.gov page size
 
@@ -31,14 +34,25 @@ export class McaImportService {
   constructor(
     private companies: CompaniesService,
     private mca: McaProvider,
+    @InjectRepository(ProcessState) private state: Repository<ProcessState>,
   ) {}
 
-  async run(target = 50000, startOffset = 0): Promise<void> {
+  private async loadOffset(): Promise<number> {
+    const s = await this.state.findOne({ where: { key: 'mca_offset' } }).catch(() => null);
+    return s?.value?.offset || 0;
+  }
+  private async saveOffset(offset: number) {
+    await this.state.save({ key: 'mca_offset', value: { offset } }).catch(() => {});
+  }
+
+  async run(target = 50000, startOffset?: number): Promise<void> {
     if (this.running) {
       this.log.warn('MCA import already running');
       return;
     }
     this.running = true;
+    // resume from the saved offset so a redeploy continues instead of re-scanning dupes
+    if (startOffset == null) startOffset = await this.loadOffset();
     const t0 = Date.now();
     this.stats = {
       running: true, target, added: 0, skipped: 0, processed: 0, offset: startOffset,
@@ -73,6 +87,7 @@ export class McaImportService {
         this.stats.skipped += skipped;
         this.stats.processed += records.length;
         this.stats.offset = offset;
+        if (this.stats.processed % 1000 < PAGE) await this.saveOffset(offset); // checkpoint for resume
 
         // real-time ETA
         const elapsed = (Date.now() - t0) / 1000;

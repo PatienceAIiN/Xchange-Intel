@@ -41,6 +41,7 @@ export class ContactFillService {
     this.log.log(`Contact fill started — ${pendingTotal.toLocaleString()} companies need contacts`);
 
     try {
+      let idleRounds = 0;
       for (;;) {
         const batch = await this.repo
           .createQueryBuilder('c')
@@ -48,7 +49,14 @@ export class ContactFillService {
           .orderBy('c.createdAt', 'DESC')
           .limit(CONCURRENCY)
           .getMany();
-        if (!batch.length) { this.log.log('All companies processed.'); break; }
+        if (!batch.length) {
+          // stay alive: new companies keep arriving from the importers. Re-check every 60s;
+          // exit only after 30 idle minutes with nothing pending.
+          if (++idleRounds >= 30) { this.log.log('Contact fill idle — no pending companies.'); break; }
+          await new Promise((r) => setTimeout(r, 60000));
+          continue;
+        }
+        idleRounds = 0;
 
         await Promise.all(batch.map(async (c) => {
           try {
