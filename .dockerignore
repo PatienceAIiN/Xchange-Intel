@@ -6,3 +6,6 @@
 .env.*
 backend/client
 frontend/.vite
+
+backend/test-*.ts
+backend/scratch_*.ts

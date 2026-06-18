@@ -11,7 +11,9 @@
     "skipLibCheck": true,
     "strictNullChecks": false,
     "forceConsistentCasingInFileNames": true,
+    "rootDir": "./src",
     "resolveJsonModule": true
   },
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "scratch_*.ts", "test-search.ts"]
 }
