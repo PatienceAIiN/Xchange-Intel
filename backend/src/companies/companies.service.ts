@@ -384,17 +384,19 @@ export class CompaniesService implements OnModuleInit {
       .getMany();
   }
 
-  /** Live data-coverage counts for the dashboard (4th card). */
-  async coverage(): Promise<{ total: number; withCin: number; withContacts: number; withDpiit: number; enriched: number }> {
+  /** Live data-coverage counts for the dashboard. Cumulative (survives redeploys). */
+  async coverage(): Promise<{ total: number; withCin: number; withContacts: number; withDpiit: number; enriched: number; mca: number; startup: number }> {
     const qb = () => this.repo.createQueryBuilder('c');
-    const [total, withCin, withContacts, withDpiit, enriched] = await Promise.all([
+    const [total, withCin, withContacts, withDpiit, enriched, mca, startup] = await Promise.all([
       qb().getCount(),
       qb().where("c.cin IS NOT NULL AND c.cin <> ''").getCount(),
       qb().where("jsonb_array_length(c.emails) > 0 OR jsonb_array_length(c.phones) > 0").getCount(),
       qb().where("c.\"dpiitNumber\" IS NOT NULL AND c.\"dpiitNumber\" <> ''").getCount(),
       qb().where("c.raw->>'enrichedAt' IS NOT NULL").getCount(),
+      qb().where("c.sources::jsonb @> '[\"mca\"]'").getCount(),
+      qb().where("c.sources::jsonb @> '[\"startup_india\"]'").getCount(),
     ]);
-    return { total, withCin, withContacts, withDpiit, enriched };
+    return { total, withCin, withContacts, withDpiit, enriched, mca, startup };
   }
 
   /** Cheap COUNT of un-enriched companies (no row hydration). */

@@ -99,6 +99,7 @@ export default function Process() {
 
   const mca = st?.phases?.mca, si = st?.phases?.startupIndia, ct = st?.phases?.contacts;
   const cov = st?.coverage;
+  const MCA_TARGET = mca?.target || 300000, SI_TARGET = si?.target || 454000;
   const pctOf = (n?: number) => (cov?.total ? Math.round(((n || 0) / cov.total) * 100) : 0);
   const copyLogs = () => {
     const text = (logs.lines || []).map((l: any) => `${l.t.slice(11, 19)} [${l.ctx}] ${l.msg}`).join('\n');
@@ -122,14 +123,14 @@ export default function Process() {
         </Stack>
 
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3,1fr)' }, gap: 2, mb: 3 }}>
-          <PhaseCard title="MCA Master Data" done={!!mca?.done}
+          <PhaseCard title="MCA Master Data" done={!!mca?.done && !mca?.running}
             active={filter.key === 'mca'} onClick={() => pickFilter('mca', 'MCA Master Data', 'mca')}
-            pct={mca?.target ? (mca.added / mca.target) * 100 : null}
-            lines={[['Imported', `${fmt(mca?.added)} / ${fmt(mca?.target)}`], ['Rate', `${mca?.ratePerSec ?? 0}/s`], ['ETA', eta(mca?.etaSeconds)], ['Status', mca?.blocked ? 'key blocked' : mca?.running ? 'pulling' : 'idle']]} />
-          <PhaseCard title="Startup India (DPIIT)" done={!!si?.done}
+            pct={((cov?.mca || 0) / MCA_TARGET) * 100}
+            lines={[['In database', `${fmt(cov?.mca)} / ${fmt(MCA_TARGET)}`], ['New this run', fmt(mca?.added)], ['Rate', `${mca?.ratePerSec ?? 0}/s`], ['Status', mca?.blocked ? '⚠ key rate-limited' : mca?.running ? 'pulling' : 'idle']]} />
+          <PhaseCard title="Startup India (DPIIT)" done={!!si?.done && !si?.running}
             active={filter.key === 'si'} onClick={() => pickFilter('si', 'Startup India', 'startupimport|startup|ingestion')}
-            pct={si?.target ? (si.added / si.target) * 100 : null}
-            lines={[['Imported', `${fmt(si?.added)} / ${fmt(si?.target)}`], ['Rate', `${si?.ratePerSec ?? 0}/s`], ['ETA', eta(si?.etaSeconds)], ['Status', si?.running ? 'pulling' : 'idle']]} />
+            pct={((cov?.startup || 0) / SI_TARGET) * 100}
+            lines={[['In database', `${fmt(cov?.startup)} / ${fmt(SI_TARGET)}`], ['New this run', fmt(si?.added)], ['Rate', `${si?.ratePerSec ?? 0}/s`], ['Status', si?.running ? 'pulling' : 'idle']]} />
           <PhaseCard title="Contact Filling" done={!!ct?.done}
             active={filter.key === 'ct'} onClick={() => pickFilter('ct', 'Contact Filling', 'contactfill|contact|website|aggregator|zauba')}
             pct={ct?.total ? (ct.processed / ct.total) * 100 : null}

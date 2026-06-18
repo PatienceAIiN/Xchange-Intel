@@ -68,7 +68,7 @@ export class McaProvider {
         const res = await fetch(`${base}&offset=${offset}&limit=${limit}`, {
           signal: AbortSignal.timeout(25000),
         });
-        if (res.status === 403) return { records: [], blocked: true, error: false };
+        if (res.status === 403 || res.status === 429) return { records: [], blocked: true, error: false };
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data: any = await res.json();
         return { records: data.records || [], blocked: false, error: false };
