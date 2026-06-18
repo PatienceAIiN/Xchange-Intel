@@ -58,15 +58,25 @@ export class ProcessService implements OnModuleInit {
     if (this.phases.orchestrating) return;
     this.phases.orchestrating = true;
 
-    // MCA bulk import (resumes from saved offset)
+    // MCA bulk import — keep pulling toward target, resuming after rate-limit pauses.
     (async () => {
-      try {
-        await this.mca.run(MCA_TARGET);
+      for (let i = 0; i < 500; i++) {
+        const cov = await this.companies.coverage().catch(() => null);
+        if (cov && cov.mca >= MCA_TARGET) {
+          this.phases.mcaDone = true;
+          await this.done('MCA import', `<p><b>${cov.mca.toLocaleString()}</b> MCA companies in database (target reached).</p>`);
+          break;
+        }
+        try { await this.mca.run(MCA_TARGET); } catch (e) { await this.fail('MCA import', e); }
         const s = this.mca.getStats();
-        if (s.blocked) return this.fail('MCA import', new Error('data.gov key 429/unauthorised — will resume'));
-        this.phases.mcaDone = true;
-        await this.done('MCA import', `<p>Imported <b>${s.added.toLocaleString()}</b> new MCA companies.</p>`);
-      } catch (e) { await this.fail('MCA import', e); }
+        if (s.blocked) { await new Promise((r) => setTimeout(r, 300000)); continue; } // 429 → retry in 5m
+        if (s.added === 0) { // run finished with nothing new → dataset exhausted at this offset
+          this.phases.mcaDone = true;
+          await this.done('MCA import', `<p>MCA import reached the end of available new records.</p>`);
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 30000)); // brief pause, then continue pulling
+      }
     })();
 
     // Startup India bulk import (independent — never blocks contacts)
@@ -115,8 +125,8 @@ export class ProcessService implements OnModuleInit {
       totalCompanies: coverage.total,
       coverage,
       phases: {
-        mca: { ...mca, done: this.phases.mcaDone || (!mca.running && mca.added > 0 && !mca.blocked) },
-        startupIndia: { ...si, ingestion: this.ingestion.stats, done: this.phases.startupDone || (!si.running && si.added > 0) },
+        mca: { ...mca, done: this.phases.mcaDone || coverage.mca >= MCA_TARGET },
+        startupIndia: { ...si, ingestion: this.ingestion.stats, done: this.phases.startupDone },
         contacts: { ...fill, done: this.phases.contactsDone },
         backup: { ...this.backup.getStats() },
       },

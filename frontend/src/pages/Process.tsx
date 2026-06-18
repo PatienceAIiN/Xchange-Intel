@@ -126,7 +126,7 @@ export default function Process() {
           <PhaseCard title="MCA Master Data" done={!!mca?.done && !mca?.running}
             active={filter.key === 'mca'} onClick={() => pickFilter('mca', 'MCA Master Data', 'mca')}
             pct={((cov?.mca || 0) / MCA_TARGET) * 100}
-            lines={[['In database', `${fmt(cov?.mca)} / ${fmt(MCA_TARGET)}`], ['New this run', fmt(mca?.added)], ['Rate', `${mca?.ratePerSec ?? 0}/s`], ['Status', mca?.blocked ? '⚠ key rate-limited' : mca?.running ? 'pulling' : 'idle']]} />
+            lines={[['In database', `${fmt(cov?.mca)} / ${fmt(MCA_TARGET)}`], ['New this run', fmt(mca?.added)], ['Rate', `${mca?.ratePerSec ?? 0}/s`], ['Status', mca?.blocked ? '⚠ rate-limited, retrying' : mca?.running ? 'pulling' : ((cov?.mca || 0) >= MCA_TARGET ? 'complete' : 'resuming…')]]} />
           <PhaseCard title="Startup India (DPIIT)" done={!!si?.done && !si?.running}
             active={filter.key === 'si'} onClick={() => pickFilter('si', 'Startup India', 'startupimport|startup|ingestion')}
             pct={((cov?.startup || 0) / SI_TARGET) * 100}
