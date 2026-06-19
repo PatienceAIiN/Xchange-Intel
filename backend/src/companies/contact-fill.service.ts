@@ -65,10 +65,14 @@ export class ContactFillService {
         }
         idleRounds = 0;
 
+        // hard per-company timeout so one hung socket can never stall the whole batch
+        const withTimeout = <T>(p: Promise<T>, ms: number) =>
+          Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error('company timeout')), ms))]);
+
         await Promise.all(batch.map(async (c) => {
           try {
             const before = (c.emails?.length || 0) + (c.phones?.length || 0);
-            const u = await this.companies.enrichContactsOnly(c, true);
+            const u = await withTimeout(this.companies.enrichContactsOnly(c, true), 45000);
             const got = (u.emails?.length || 0) + (u.phones?.length || 0) > before;
             if (got) this.stats.withContacts++;
             if (u.raw?.enrichedAt) this.doneThisRun++; // newly marked done (got contact or 3rd try)
