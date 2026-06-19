@@ -6,7 +6,7 @@ const PHONE_RE = /(?:\+?91[-\s]?)?[6-9]\d{9}\b/g;
 
 // drop the aggregators' OWN contact details + junk
 const EMAIL_BLOCK =
-  /(indiafilings|thecompanycheck|zaubacorp|tofler|cleartax|justdial|sentry|wixpress|example|\.png|\.jpg|\.svg|@2x|schema\.org|w3\.org|googleapis|gstatic|support@|help@|info@indiafilings|noreply)/i;
+  /(indiafilings|thecompanycheck|zaubacorp|tofler|instafinancials|cleartax|justdial|sentry|wixpress|example|\.png|\.jpg|\.svg|@2x|schema\.org|w3\.org|googleapis|gstatic|support@|help@|noreply|sales@|care@|contact@instafinancials)/i;
 
 export interface AggregatorResult {
   emails: string[];

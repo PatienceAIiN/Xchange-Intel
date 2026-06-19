@@ -20,6 +20,7 @@ export class ContactFillService {
 
   stats = {
     running: false, processed: 0, withContacts: 0, total: 0,
+    completed: 0, remaining: 0, grandTotal: 0,
     ratePerSec: 0, etaSeconds: null as number | null,
     startedAt: null as string | null, lastCompany: '',
   };
@@ -33,20 +34,24 @@ export class ContactFillService {
     if (this.running) { this.log.warn('contact fill already running'); return; }
     this.running = true;
     const t0 = Date.now();
+    const grandTotal = await this.companies.countCompanies();
     const pendingTotal = await this.companies.countUnenriched();
     this.stats = {
       running: true, processed: 0, withContacts: 0, total: pendingTotal,
+      completed: grandTotal - pendingTotal, remaining: pendingTotal, grandTotal,
       ratePerSec: 0, etaSeconds: null, startedAt: new Date().toISOString(), lastCompany: '',
     };
-    this.log.log(`Contact fill started — ${pendingTotal.toLocaleString()} companies need contacts`);
+    this.log.log(`Contact fill started — ${pendingTotal.toLocaleString()} of ${grandTotal.toLocaleString()} need contacts`);
 
     try {
       let idleRounds = 0;
       for (;;) {
+        // least-tried first → every company gets attempt #1 before any retries
         const batch = await this.repo
           .createQueryBuilder('c')
           .where("c.raw->>'enrichedAt' IS NULL")
-          .orderBy('c.createdAt', 'DESC')
+          .orderBy("COALESCE((c.raw->>'contactTries')::int, 0)", 'ASC')
+          .addOrderBy('c.createdAt', 'DESC')
           .limit(CONCURRENCY)
           .getMany();
         if (!batch.length) {
@@ -70,21 +75,29 @@ export class ContactFillService {
             this.log.log(`✓ ${u.name.slice(0, 40)} → email:${e} phone:${p}`);
           } catch (e) {
             this.log.warn(`fill failed for ${c.name}: ${e}`);
-            // still mark attempted so we don't loop forever on a bad row
-            c.raw = { ...(c.raw || {}), enrichedAt: new Date().toISOString() };
+            // count the attempt; only give up (mark done) after 3 tries
+            const tries = ((c.raw?.contactTries as number) || 0) + 1;
+            c.raw = { ...(c.raw || {}), contactTries: tries, ...(tries >= 3 ? { enrichedAt: new Date().toISOString() } : {}) };
             await this.repo.save(c).catch(() => {});
           }
           this.stats.processed++;
         }));
 
+        // refresh true completed/remaining from the DB periodically (cheap COUNT)
+        const startCompleted = this.stats.grandTotal - this.stats.total;
+        if (this.stats.processed % 60 < CONCURRENCY) {
+          this.stats.remaining = await this.companies.countUnenriched().catch(() => this.stats.remaining);
+          this.stats.completed = this.stats.grandTotal - this.stats.remaining;
+        }
         const el = (Date.now() - t0) / 1000;
-        const rate = this.stats.processed / Math.max(el, 1);
+        const uniqueDone = Math.max(this.stats.completed - startCompleted, 1);
+        const rate = uniqueDone / Math.max(el, 1); // genuine companies finished per second
         this.stats.ratePerSec = +rate.toFixed(2);
-        this.stats.etaSeconds = rate > 0 ? Math.round((this.stats.total - this.stats.processed) / rate) : null;
+        this.stats.etaSeconds = rate > 0 ? Math.round(this.stats.remaining / rate) : null;
         const eta = this.stats.etaSeconds;
         const etaStr = eta == null ? '—' : eta > 3600 ? `${(eta / 3600).toFixed(1)}h` : `${Math.round(eta / 60)}m`;
         this.log.log(
-          `FILL ${this.stats.processed}/${this.stats.total} · withContacts ${this.stats.withContacts} · ${rate.toFixed(1)}/s · ETA ${etaStr}`,
+          `FILL completed ${this.stats.completed.toLocaleString()}/${this.stats.grandTotal.toLocaleString()} · remaining ${this.stats.remaining.toLocaleString()} · withContacts ${this.stats.withContacts} · ${rate.toFixed(2)}/s · ETA ${etaStr}`,
         );
 
         if (this.stats.processed % CSV_EVERY < CONCURRENCY) {

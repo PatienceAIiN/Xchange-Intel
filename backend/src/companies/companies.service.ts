@@ -365,13 +365,19 @@ export class CompaniesService implements OnModuleInit {
       c.industry = c.industry || si.industry || '';
       if (!c.sources.includes('startup_india')) c.sources = [...c.sources, 'startup_india'];
     }
+    // Retry policy: give each company up to 3 genuine attempts before marking done, so a
+    // transient miss (timeout / rate-limit / blocked proxy) doesn't permanently skip it.
+    const gotContact = (c.emails?.length || 0) + (c.phones?.length || 0) > 0;
+    const tries = ((c.raw?.contactTries as number) || 0) + 1;
     c.raw = {
       ...(c.raw || {}),
       ...(r.contactsRaw ? { contacts: r.contactsRaw } : {}),
       ...(r.aggRaw ? { aggregator: r.aggRaw } : {}),
       ...(si ? { startupIndia: si.raw || si } : {}),
-      enrichedAt: new Date().toISOString(),
+      contactTries: tries,
     };
+    // mark fully done only once contacts are found OR all 3 attempts are exhausted
+    if (gotContact || tries >= 3) c.raw.enrichedAt = new Date().toISOString();
     return this.repo.save(c);
   }
 

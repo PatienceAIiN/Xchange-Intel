@@ -133,8 +133,8 @@ export default function Process() {
             lines={[['In database', `${fmt(cov?.startup)} / ${fmt(SI_TARGET)}`], ['New this run', fmt(si?.added)], ['Rate', `${si?.ratePerSec ?? 0}/s`], ['Status', si?.running ? 'pulling' : 'idle']]} />
           <PhaseCard title="Contact Filling" done={!!ct?.done}
             active={filter.key === 'ct'} onClick={() => pickFilter('ct', 'Contact Filling', 'contactfill|contact|website|aggregator|zauba')}
-            pct={ct?.total ? (ct.processed / ct.total) * 100 : null}
-            lines={[['Processed', `${fmt(ct?.processed)} / ${fmt(ct?.total)}`], ['With contacts', fmt(ct?.withContacts)], ['Rate', `${ct?.ratePerSec ?? 0}/s`], ['ETA', eta(ct?.etaSeconds)], ['Last', (ct?.lastCompany || '—').slice(0, 28)]]} />
+            pct={ct?.grandTotal ? (ct.completed / ct.grandTotal) * 100 : null}
+            lines={[['Completed', `${fmt(ct?.completed)} / ${fmt(ct?.grandTotal)}`], ['Remaining', fmt(ct?.remaining)], ['With contacts', fmt(ct?.withContacts)], ['Rate', `${ct?.ratePerSec ?? 0}/s`], ['ETA', eta(ct?.etaSeconds)]]} />
         </Box>
 
         {/* Cards 4, 5 & 6 — live coverage + completion + backup replication (authentic) */}
