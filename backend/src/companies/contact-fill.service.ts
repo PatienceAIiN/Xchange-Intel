@@ -17,6 +17,7 @@ const CSV_EVERY = 5000; // refresh CSV every N filled (full-table scan — keep 
 export class ContactFillService {
   private readonly log = new Logger('ContactFill');
   private running = false;
+  private doneThisRun = 0;
 
   stats = {
     running: false, processed: 0, withContacts: 0, total: 0,
@@ -33,6 +34,7 @@ export class ContactFillService {
   async run() {
     if (this.running) { this.log.warn('contact fill already running'); return; }
     this.running = true;
+    this.doneThisRun = 0;
     const t0 = Date.now();
     const grandTotal = await this.companies.countCompanies();
     const pendingTotal = await this.companies.countUnenriched();
@@ -69,6 +71,7 @@ export class ContactFillService {
             const u = await this.companies.enrichContactsOnly(c, true);
             const got = (u.emails?.length || 0) + (u.phones?.length || 0) > before;
             if (got) this.stats.withContacts++;
+            if (u.raw?.enrichedAt) this.doneThisRun++; // newly marked done (got contact or 3rd try)
             this.stats.lastCompany = u.name;
             const e = (u.emails || [])[0] || '—';
             const p = (u.phones || [])[0] || '—';
@@ -83,17 +86,14 @@ export class ContactFillService {
           this.stats.processed++;
         }));
 
-        // refresh true completed/remaining from the DB periodically (cheap COUNT)
+        // completed/remaining tracked incrementally (accurate, no extra DB load)
         const startCompleted = this.stats.grandTotal - this.stats.total;
-        if (this.stats.processed % 60 < CONCURRENCY) {
-          this.stats.remaining = await this.companies.countUnenriched().catch(() => this.stats.remaining);
-          this.stats.completed = this.stats.grandTotal - this.stats.remaining;
-        }
+        this.stats.completed = startCompleted + this.doneThisRun;
+        this.stats.remaining = Math.max(this.stats.grandTotal - this.stats.completed, 0);
         const el = (Date.now() - t0) / 1000;
-        const uniqueDone = Math.max(this.stats.completed - startCompleted, 1);
-        const rate = uniqueDone / Math.max(el, 1); // genuine companies finished per second
+        const rate = this.doneThisRun / Math.max(el, 1); // genuine companies finished per second
         this.stats.ratePerSec = +rate.toFixed(2);
-        this.stats.etaSeconds = rate > 0 ? Math.round(this.stats.remaining / rate) : null;
+        this.stats.etaSeconds = rate > 0 && this.doneThisRun > 0 ? Math.round(this.stats.remaining / rate) : null;
         const eta = this.stats.etaSeconds;
         const etaStr = eta == null ? '—' : eta > 3600 ? `${(eta / 3600).toFixed(1)}h` : `${Math.round(eta / 60)}m`;
         this.log.log(
