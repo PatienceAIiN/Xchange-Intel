@@ -43,8 +43,12 @@ import { ConsentEvent } from './consent/consent-event.entity';
         type: 'postgres',
         url: cfg.get<string>('DATABASE_URL'),
         ssl: { rejectUnauthorized: false },
-        entities: [User, Company, SearchLog, ConsentEvent],
+        entities: [User, Company, SearchLog, ConsentEvent, ProcessState],
         synchronize: true, // MVP: auto-create schema. Use migrations in real prod.
+        // cap the pool so we never exhaust Neon free-tier connections (the 500s)
+        extra: { max: 10, connectionTimeoutMillis: 15000, idleTimeoutMillis: 30000 },
+        retryAttempts: 5,
+        retryDelay: 3000,
       }),
     }),
     AuthModule,

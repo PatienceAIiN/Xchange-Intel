@@ -246,6 +246,9 @@ export class CompaniesService implements OnModuleInit {
    *   Industry,Stage,MCAStatus,Sources,Description). Genuine data only. */
   async writeCsvExport(path: string): Promise<number> {
     const fs = await import('fs');
+    const pathMod = await import('path');
+    // skip the full-table scan entirely if the target dir isn't writable (e.g. on Render)
+    if (!fs.existsSync(pathMod.dirname(path))) return 0;
     const H = ['Name','CIN','LLPIN','Website','Emails','Phones','Founders','Address','Social',
       'StartupIndia','DPIIT','Industry','Stage','MCAStatus','Sources','Description'];
     const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;

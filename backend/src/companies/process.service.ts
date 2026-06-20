@@ -103,7 +103,7 @@ export class ProcessService implements OnModuleInit {
       try {
         for (let i = 0; i < 200; i++) {
           await this.backup.run();
-          await new Promise((r) => setTimeout(r, 300000)); // re-replicate new completed rows every 5 min
+          await new Promise((r) => setTimeout(r, 900000)); // re-replicate every 15 min (lighter on DB)
         }
       } catch (e) { await this.fail('Backup replication', e); }
     })();
